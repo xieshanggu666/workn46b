@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_roles
+from app.core.deps import ensure_company_access, get_current_user, require_roles
 from app.models import Company, EmissionResult, User
 from app.services.calculation_service import recalc_company_year, scope_totals
 
@@ -14,8 +14,7 @@ def calculate(company_id: int, year: int, db: Session = Depends(get_db), user: U
     company = db.get(Company, company_id)
     if not company:
         raise HTTPException(status_code=404, detail="企业不存在")
-    if user.role == "enterprise" and user.company_id != company_id:
-        raise HTTPException(status_code=403, detail="无权为该企业核算")
+    ensure_company_access(user, company_id, "无权为该企业核算")
     count = recalc_company_year(db, company_id, year)
     totals = scope_totals(db, company_id, year)
     return {"count": count, "totals": totals, "total": round(sum(totals.values()), 4)}
@@ -23,8 +22,7 @@ def calculate(company_id: int, year: int, db: Session = Depends(get_db), user: U
 
 @router.get("/companies/{company_id}/results")
 def list_results(company_id: int, year: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if user.role == "enterprise" and user.company_id != company_id:
-        raise HTTPException(status_code=403, detail="无权查看该企业")
+    ensure_company_access(user, company_id, "无权查看该企业")
     results = (
         db.query(EmissionResult)
         .filter(EmissionResult.company_id == company_id, EmissionResult.year == year)

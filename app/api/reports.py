@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_roles
+from app.core.deps import ensure_company_access, get_current_user, require_roles
 from app.models import Company, MrvReport, User
 from app.services.mrv_service import approve_report, generate_report, submit_report
 
@@ -11,8 +11,7 @@ router = APIRouter(prefix="/api", tags=["reports"])
 
 @router.get("/companies/{company_id}/reports")
 def list_reports(company_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if user.role == "enterprise" and user.company_id != company_id:
-        raise HTTPException(status_code=403, detail="无权查看该企业报告")
+    ensure_company_access(user, company_id, "无权查看该企业报告")
     reports = db.query(MrvReport).filter(MrvReport.company_id == company_id).order_by(MrvReport.year.desc()).all()
     return [
         {
@@ -35,8 +34,7 @@ def generate(company_id: int, year: int, db: Session = Depends(get_db), user: Us
     company = db.get(Company, company_id)
     if not company:
         raise HTTPException(status_code=404, detail="企业不存在")
-    if user.role == "enterprise" and user.company_id != company_id:
-        raise HTTPException(status_code=403, detail="无权为该企业生成报告")
+    ensure_company_access(user, company_id, "无权为该企业生成报告")
     report = generate_report(db, company_id, year)
     return {"id": report.id, "status": report.status, "total_emission": float(report.total_emission)}
 
@@ -46,8 +44,7 @@ def submit(report_id: int, db: Session = Depends(get_db), user: User = Depends(r
     report = db.get(MrvReport, report_id)
     if not report:
         raise HTTPException(status_code=404, detail="报告不存在")
-    if user.role == "enterprise" and report.company_id != user.company_id:
-        raise HTTPException(status_code=403, detail="无权提交该报告")
+    ensure_company_access(user, report.company_id, "无权提交该报告")
     try:
         submit_report(db, report)
     except ValueError as e:
@@ -72,8 +69,7 @@ def report_detail(report_id: int, db: Session = Depends(get_db), user: User = De
     report = db.get(MrvReport, report_id)
     if not report:
         raise HTTPException(status_code=404, detail="报告不存在")
-    if user.role == "enterprise" and report.company_id != user.company_id:
-        raise HTTPException(status_code=403, detail="无权查看该报告")
+    ensure_company_access(user, report.company_id, "无权查看该报告")
     return {
         "id": report.id,
         "company_id": report.company_id,

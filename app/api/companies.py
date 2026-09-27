@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_roles
+from app.core.deps import ensure_company_access, get_current_user, require_roles
 from app.models import Company, EmissionScope, User
 from app.schemas import CompanyIn, ScopeIn
 from app.services.calculation_service import annual_total, scope_totals
@@ -55,8 +55,7 @@ def company_detail(company_id: int, db: Session = Depends(get_db), user: User = 
     company = db.get(Company, company_id)
     if not company:
         raise HTTPException(status_code=404, detail="企业不存在")
-    if user.role == "enterprise" and user.company_id != company_id:
-        raise HTTPException(status_code=403, detail="无权查看该企业")
+    ensure_company_access(user, company_id, "无权查看该企业")
     scopes = db.query(EmissionScope).filter(EmissionScope.company_id == company_id).all()
     return {
         "id": company.id,
@@ -87,7 +86,6 @@ def add_scope(company_id: int, data: ScopeIn, db: Session = Depends(get_db), use
 
 @router.get("/companies/{company_id}/totals")
 def company_totals(company_id: int, year: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if user.role == "enterprise" and user.company_id != company_id:
-        raise HTTPException(status_code=403, detail="无权查看该企业")
+    ensure_company_access(user, company_id, "无权查看该企业")
     totals = scope_totals(db, company_id, year)
     return {"year": year, "scopes": totals, "total": annual_total(db, company_id, year)}

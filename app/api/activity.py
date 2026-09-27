@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_roles
+from app.core.deps import ensure_company_access, get_current_user, require_roles
 from app.models import ActivityData, EmissionScope, User
 from app.schemas import ActivityIn
 
@@ -50,8 +50,7 @@ def create_activity(data: ActivityIn, db: Session = Depends(get_db), user: User 
     if not scope:
         raise HTTPException(status_code=404, detail="核算边界不存在")
     if user.role == "enterprise":
-        if scope.company_id != user.company_id:
-            raise HTTPException(status_code=403, detail="无权为该企业录入数据")
+        ensure_company_access(user, scope.company_id, "无权为该企业录入数据")
         company_id = user.company_id
     else:
         company_id = scope.company_id

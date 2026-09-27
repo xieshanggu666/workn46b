@@ -27,3 +27,14 @@ def require_roles(*roles: str):
         return user
 
     return checker
+
+
+def ensure_company_access(user: User, company_id: int | None, detail: str = "无权访问该企业数据") -> None:
+    """统一企业数据归属边界。
+
+    enterprise（控排企业）只能访问本公司 (user.company_id) 的数据；
+    admin / verifier 为监管侧角色，可跨企业访问。
+    任何按企业隔离的资源（账户、流水、核算结果、报告等）都必须经过此校验。
+    """
+    if user.role == "enterprise" and user.company_id != company_id:
+        raise HTTPException(status_code=403, detail=detail)
