@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_roles
+from app.core.database import get_db
+from app.core.deps import ensure_company_access, get_current_user, require_roles
 from app.models import AllowanceAccount, AllowanceTransaction, ComplianceRecord, Quota, User
 from app.schemas import QuotaIn, TransferIn
 from app.services.quota_service import allocate_quota, clear_emission
@@ -42,8 +43,7 @@ def create_quota(data: QuotaIn, db: Session = Depends(get_db), user: User = Depe
 
 @router.get("/companies/{company_id}/account")
 def company_account(company_id: int, year: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if user.role == "enterprise" and user.company_id != company_id:
-        raise HTTPException(status_code=403, detail="无权查看该账户")
+    ensure_company_access(user, company_id, "无权查看该账户")
     account = (
         db.query(AllowanceAccount)
         .filter(AllowanceAccount.company_id == company_id, AllowanceAccount.year == year)
@@ -66,8 +66,7 @@ def do_transfer(account_id: int, data: TransferIn, db: Session = Depends(get_db)
     account = db.get(AllowanceAccount, account_id)
     if not account:
         raise HTTPException(status_code=404, detail="配额账户不存在")
-    if user.role == "enterprise" and account.company_id != user.company_id:
-        raise HTTPException(status_code=403, detail="无权操作该账户")
+    ensure_company_access(user, account.company_id, "无权操作该账户")
     try:
         tx = transfer(db, account, data.amount, data.tx_type, data.counterparty, data.price, data.tx_date, data.remark)
     except ValueError as e:
@@ -77,6 +76,10 @@ def do_transfer(account_id: int, data: TransferIn, db: Session = Depends(get_db)
 
 @router.get("/accounts/{account_id}/transactions")
 def account_transactions(account_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    account = db.get(AllowanceAccount, account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="配额账户不存在")
+    ensure_company_access(user, account.company_id, "无权查看该账户交易明细")
     txs = (
         db.query(AllowanceTransaction)
         .filter(AllowanceTransaction.account_id == account_id)
